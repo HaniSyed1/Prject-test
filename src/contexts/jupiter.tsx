@@ -1,7 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Configuration, DefaultApi } from "@jup-ag/api";
-import { TokenInfo, TokenListProvider } from "@solana/spl-token-registry";
-import { CHAIN_ID } from "../constants";
+import { TokenInfo } from "@solana/spl-token-registry";
 import axios from "axios";
 
 type RouteMap = Map<string, string[]>;
@@ -25,46 +24,54 @@ const getTopTokens = async () => {
   return data as string[];
 };
 
-export const JupiterApiProvider: React.FC<{}> = ({ children }) => {
+export const JupiterApiProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [tokenMap, setTokenMap] = useState<Map<string, TokenInfo>>(new Map());
   const [routeMap, setRouteMap] = useState<RouteMap>(new Map());
   const [loaded, setLoaded] = useState(false);
 
+  // ✅ FIXED useMemo
   const api = useMemo(() => {
-    const config = new Configuration({ basePath: import.meta.env.JUP_SWAP_API || "https://public.jupiterapi.com" });
+    const config = new Configuration({
+      basePath:
+        process.env.NEXT_PUBLIC_JUP_SWAP_API ??
+        "https://public.jupiterapi.com",
+    });
+
     return new DefaultApi(config);
   }, []);
 
   useEffect(() => {
     (async () => {
-      let [tokenList, topTokens, indexedRouteMapResult] = await Promise.all([
+      const [tokenList, , indexedRouteMapResult] = await Promise.all([
         getTokens(),
         getTopTokens(),
         api.v1IndexedRouteMapGet(),
       ]);
 
-      tokenList = tokenList; //.filter((e) => !!topTokens.includes(e.address));
+      const { indexedRouteMap = {}, mintKeys = [] } =
+        indexedRouteMapResult;
 
-      const { indexedRouteMap = {}, mintKeys = [] } = indexedRouteMapResult;
-
-      const routeMap = Object.keys(indexedRouteMap).reduce((routeMap, key) => {
-        routeMap.set(
+      const routeMap = Object.keys(indexedRouteMap).reduce((map, key) => {
+        map.set(
           mintKeys[Number(key)],
-          indexedRouteMap[key].map((index) => mintKeys[index])
+          indexedRouteMap[key].map((i) => mintKeys[i])
         );
-        return routeMap;
+        return map;
       }, new Map<string, string[]>());
 
       setTokenMap(
         tokenList.reduce((map, item) => {
           map.set(item.address, item);
           return map;
-        }, new Map())
+        }, new Map<string, TokenInfo>())
       );
+
       setRouteMap(routeMap);
       setLoaded(true);
     })();
-  }, []);
+  }, [api]);
 
   return (
     <JupiterApiContext.Provider value={{ api, routeMap, tokenMap, loaded }}>
